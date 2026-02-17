@@ -103,11 +103,16 @@ for entry in "${pending_tasks[@]}"; do
     title=$(jq -r '.title' "$task_file")
     prompt=$(jq -r '.prompt' "$task_file")
     attempts=$(jq -r '.attempts // 0' "$task_file")
+    task_model=$(jq -r '.model // empty' "$task_file" 2>/dev/null)
   else
     title=$(grep -o '"title": *"[^"]*"' "$task_file" | head -1 | sed 's/"title": *"//' | sed 's/"$//')
     prompt=$(grep -o '"prompt": *"[^"]*"' "$task_file" | head -1 | sed 's/"prompt": *"//' | sed 's/"$//')
     attempts=0
+    task_model=""
   fi
+
+  # Per-task model override
+  effective_model="${task_model:-$model}"
 
   # Setup worktree
   wt_result=$("$SCRIPT_DIR/worktree.sh" setup "$project" "$task_id" 2>&1)
@@ -164,7 +169,7 @@ $([ -n "$progress_context" ] && echo "$progress_context" || echo "No learnings y
   count=$((count + 1))
   printf '{"taskId":"%s","title":"%s","worktree":"%s","promptFile":"%s","logFile":"%s","model":"%s","attempt":%d}\n' \
     "$task_id" "$title" "$wt_path" "$prompt_file" "$log_file" \
-    "$model" "$((attempts + 1))"
+    "$effective_model" "$((attempts + 1))"
 done
 
 printf '{"dispatched":%d,"maxWorkers":%d,"running":%d}\n' "$count" "$max_workers" "$((running + count))"

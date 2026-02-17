@@ -29,6 +29,7 @@ project_status() {
   local running_c=$(find "$tdir" -maxdepth 1 -name '*.json' -exec grep -l '"status": *"running"' {} + 2>/dev/null | wc -l | tr -d ' ')
   local pending_c=$(find "$tdir" -maxdepth 1 -name '*.json' -exec grep -l '"status": *"pending"' {} + 2>/dev/null | wc -l | tr -d ' ')
   local failed_c=$(find "$tdir" -maxdepth 1 -name '*.json' -exec grep -l '"status": *"failed"' {} + 2>/dev/null | wc -l | tr -d ' ')
+  local ratelimit_c=$(find "$tdir" -maxdepth 1 -name '*.json' -exec grep -l '"status": *"rate_limited"' {} + 2>/dev/null | wc -l | tr -d ' ')
 
   if [ "$format" = "text" ]; then
     local name="$id"
@@ -43,6 +44,7 @@ project_status() {
       echo "  Progress: $pct% ($done_c/$total)"
       [ "$running_c" -gt 0 ] && echo "  🔄 Running: $running_c"
       [ "$pending_c" -gt 0 ] && echo "  ⏳ Pending: $pending_c"
+      [ "$ratelimit_c" -gt 0 ] && echo "  ⏸️ Rate limited: $ratelimit_c (will auto-resume)"
       [ "$failed_c" -gt 0 ] && echo "  ❌ Failed: $failed_c"
       [ "$done_c" -gt 0 ] && echo "  ✅ Done: $done_c"
 
@@ -89,8 +91,8 @@ project_status() {
     else
       local name="$id"
     fi
-    printf '{"id":"%s","name":"%s","total":%d,"done":%d,"running":%d,"pending":%d,"failed":%d' \
-      "$id" "$name" "$total" "$done_c" "$running_c" "$pending_c" "$failed_c"
+    printf '{"id":"%s","name":"%s","total":%d,"done":%d,"running":%d,"pending":%d,"failed":%d,"rateLimited":%d' \
+      "$id" "$name" "$total" "$done_c" "$running_c" "$pending_c" "$failed_c" "$ratelimit_c"
     if [ "$total" -gt 0 ]; then
       local pct=$((done_c * 100 / total))
       printf ',"progress":%d' "$pct"

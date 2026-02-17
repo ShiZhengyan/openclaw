@@ -80,7 +80,7 @@ case "$action" in
     ;;
 
   complete)
-    tid="${1:-}"; exit_code="${2:-0}"; summary="${3:-}"
+    tid="${1:-}"; exit_code="${2:-0}"; summary="${3:-}"; failure_type="${4:-}"
     [ -z "$tid" ] && json_error "missing task id"
     tfile="$task_dir/$tid.json"
     [ -f "$tfile" ] || json_error "task '$tid' not found"
@@ -91,6 +91,11 @@ case "$action" in
       new_status="done"
     else
       new_status="failed"
+    fi
+
+    # Check if this is a rate-limit failure — mark as "rate_limited" for smart retry
+    if [ "$failure_type" = "rate_limit" ] || echo "$summary" | grep -qi "rate.limit\|429\|too many requests\|throttl"; then
+      new_status="rate_limited"
     fi
 
     if command -v jq &>/dev/null; then
@@ -139,12 +144,65 @@ case "$action" in
     first=true
     for f in "$task_dir"/task-*.json; do
       [ -f "$f" ] || continue
-      grep -q '"status": *"running"' "$f" || continue
+      grep -qE '"status": *"(running|rate_limited)"' "$f" || continue
       $first || printf ','
       first=false
       cat "$f"
     done
     printf ']\n'
+    ;;
+
+  retry)
+    # Reset a failed/rate_limited task to pending for re-dispatch (fresh start)
+    tid="${1:-}"
+    [ -z "$tid" ] && json_error "missing task id"
+    tfile="$task_dir/$tid.json"
+    [ -f "$tfile" ] || json_error "task '$tid' not found"
+    if command -v jq &>/dev/null; then
+      jq '.status = "pending" | .completedAt = null | .result = null | .sessionId = null | .copilotSessionId = null' \
+        "$tfile" > "$tfile.tmp" && mv "$tfile.tmp" "$tfile"
+    else
+      sed -i.bak 's/"status": *"[^"]*"/"status": "pending"/' "$tfile"
+      rm -f "$tfile.bak"
+    fi
+    # Clean up worktree if it exists
+    wt=$(grep -o '"worktree": *"[^"]*"' "$tfile" | sed 's/"worktree": *"//;s/"$//')
+    [ -n "$wt" ] && [ -d "$wt" ] && "$SCRIPT_DIR/worktree.sh" teardown "$project" "$tid" >/dev/null 2>&1 || true
+    printf '{"taskId":"%s","status":"pending","action":"retry"}\n' "$tid"
+    ;;
+
+  resume)
+    # Resume a rate-limited/failed task using copilot --continue in the same worktree
+    tid="${1:-}"
+    [ -z "$tid" ] && json_error "missing task id"
+    tfile="$task_dir/$tid.json"
+    [ -f "$tfile" ] || json_error "task '$tid' not found"
+
+    if command -v jq &>/dev/null; then
+      wt=$(jq -r '.worktree // ""' "$tfile")
+      csid=$(jq -r '.copilotSessionId // ""' "$tfile")
+    else
+      wt=$(grep -o '"worktree": *"[^"]*"' "$tfile" | sed 's/"worktree": *"//;s/"$//')
+      csid=""
+    fi
+
+    [ -z "$wt" ] || [ ! -d "$wt" ] && json_error "worktree not found — use retry instead of resume"
+
+    # Mark as running again
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if command -v jq &>/dev/null; then
+      jq --arg t "$now" '.status = "running" | .startedAt = $t | .completedAt = null' \
+        "$tfile" > "$tfile.tmp" && mv "$tfile.tmp" "$tfile"
+    fi
+
+    # Return the resume command for the agent to execute
+    if [ -n "$csid" ]; then
+      printf '{"taskId":"%s","action":"resume","worktree":"%s","resumeCmd":"copilot --resume %s --allow-all"}\n' \
+        "$tid" "$wt" "$csid"
+    else
+      printf '{"taskId":"%s","action":"resume","worktree":"%s","resumeCmd":"copilot --continue --allow-all"}\n' \
+        "$tid" "$wt"
+    fi
     ;;
 
   *)
