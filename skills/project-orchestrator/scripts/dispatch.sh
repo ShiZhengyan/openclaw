@@ -33,10 +33,10 @@ fi
 
 # Read model from config
 if command -v jq &>/dev/null; then
-  model=$(jq -r '.config.model // "claude-sonnet-4"' "$project_dir/.orchestrator/project.json")
+  model=$(jq -r '.config.model // "claude-opus-4.6"' "$project_dir/.orchestrator/project.json")
   permissions=$(jq -r '.config.defaultPermissions // "--allow-all"' "$project_dir/.orchestrator/project.json")
 else
-  model="claude-sonnet-4"
+  model="claude-opus-4.6"
   permissions="--allow-all"
 fi
 
