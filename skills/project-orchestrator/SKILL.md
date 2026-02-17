@@ -30,11 +30,16 @@ You are a **project manager** that orchestrates multiple Copilot CLI workers to 
 | -------------------------------------- | ------------------------------------------------------------------- |
 | "新建项目 X" / "create project X"      | Run `project.sh create`                                             |
 | "添加任务" / "add task"                | Run `task.sh add`                                                   |
+| "帮我规划任务" / "plan tasks"          | Batch-add tasks, then **list all for review before dispatch**       |
+| "给我看任务" / "show tasks"            | Run `task.sh list` to show all tasks                                |
+| "修改 task-002" / "edit task"          | Run `task.sh update` to change prompt/priority/deps                 |
 | "开始" / "start" / "run"              | Run `dispatch.sh` to launch workers                                 |
 | "进展" / "status"                      | Run `status.sh` for overview                                        |
 | "停止" / "stop task-001"               | Kill the worker, mark task failed                                   |
-| "重试" / "retry task-001"              | Reset task to pending, re-dispatch                                  |
+| "重试" / "retry task-001"              | Run `monitor.sh retry`, then re-dispatch                            |
+| "恢复" / "resume task-001"             | Run `monitor.sh resume` (continue from where it stopped)            |
 | "日志" / "log task-001"                | Run `monitor.sh log` to show output                                 |
+| "配置" / "config"                      | Run `project.sh update` or `project.sh get` to show/change config   |
 
 ---
 
@@ -91,6 +96,49 @@ bash command:"echo '[
 
 **Task priority**: Lower number = higher priority (1 = do first).
 **Dependencies**: Use task IDs. A task won't be dispatched until all dependencies are done.
+
+---
+
+## Workflow: Reviewing Tasks Before Execution
+
+**Important**: When the user says "帮我规划任务" (plan tasks), add the tasks but **do NOT dispatch immediately**. Instead, present a summary for review.
+
+After batch-adding tasks, show a formatted summary:
+
+```bash
+# List all tasks for review
+bash command:"skills/project-orchestrator/scripts/task.sh list my-app"
+```
+
+Present to user like:
+```
+📝 *任务规划 (my-app)* — 5 个任务
+
+1️⃣ task-001: Initialize React+Vite frontend (P1)
+2️⃣ task-002: Set up Express backend (P1)
+3️⃣ task-003: Build Todo CRUD API (P2, depends on task-002)
+4️⃣ task-004: Build Todo UI components (P2, depends on task-001, task-003)
+5️⃣ task-005: Add drag-and-drop (P3, depends on task-004)
+
+满意的话说"开始"，需要修改的话告诉我哪个任务要改。
+```
+
+If the user wants changes:
+```bash
+# Modify a task's prompt
+bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 prompt 'New detailed prompt...'"
+
+# Change priority
+bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 priority 1"
+
+# Delete a task
+bash command:"skills/project-orchestrator/scripts/task.sh delete my-app task-003"
+
+# Add a new task
+bash command:"skills/project-orchestrator/scripts/task.sh add my-app 'New task title' 'New task prompt' 2"
+```
+
+Only dispatch when the user explicitly says "开始" / "start" / "run" / "go".
 
 ---
 
@@ -302,6 +350,9 @@ bash command:"skills/project-orchestrator/scripts/project.sh update my-app maxWo
 
 # Change default model for workers
 bash command:"skills/project-orchestrator/scripts/project.sh update my-app model claude-opus-4.6"
+
+# Change permissions
+bash command:"skills/project-orchestrator/scripts/project.sh update my-app defaultPermissions '--allow-all-tools'"
 ```
 
 | Config Key           | Default              | Description                           |
@@ -309,6 +360,36 @@ bash command:"skills/project-orchestrator/scripts/project.sh update my-app model
 | `maxWorkers`         | 10                   | Max parallel Copilot CLI instances    |
 | `model`              | `claude-sonnet-4`    | LLM model for workers                |
 | `defaultPermissions` | `--allow-all`        | Copilot CLI permission flags          |
+
+### Model Selection Guide
+
+The `model` config controls which LLM each Copilot CLI worker uses. Choose based on task complexity:
+
+| Model                  | Best For                                    | Speed   | Cost      |
+| ---------------------- | ------------------------------------------- | ------- | --------- |
+| `claude-haiku-4.5`     | Simple/fast tasks (create files, small edits)| ⚡ Fast | 💰 Cheap  |
+| `claude-sonnet-4`      | **Default.** General coding, most tasks      | 🔄 Med  | 💰💰 Med  |
+| `claude-opus-4.6`      | Complex architecture, debugging, refactoring | 🐢 Slow | 💰💰💰    |
+| `gpt-5.1-codex`        | Alternative for variety                      | 🔄 Med  | 💰💰 Med  |
+
+**Per-task model override**: You can set a different model for individual tasks:
+```bash
+bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 model claude-opus-4.6"
+```
+The dispatch script will use the task-level model if set, otherwise falls back to project config.
+
+### Max Workers Design
+
+`maxWorkers` controls how many Copilot CLI instances run simultaneously. Considerations:
+
+- **Rate limits**: Copilot CLI has per-account rate limits. Running 10 workers simultaneously may trigger 429s faster.
+- **Machine resources**: Each Copilot CLI worker uses ~100-200MB RAM + a PTY. 10 workers ≈ 1-2GB.
+- **Git conflicts**: More parallel workers on the same codebase = higher chance of merge conflicts at teardown.
+
+**Recommendations:**
+- Start with `3-5` for new projects (get PROGRESS.md established first)
+- Scale to `10` once the project has good AGENTS.md and learnings
+- Use `1` for sequential tasks that must not conflict
 
 ---
 
@@ -402,12 +483,47 @@ Reply: "🚀 已启动 2 个 worker：
 
 ## Error Recovery
 
+### Rate Limiting (429 / Too Many Requests)
+
+When a Copilot CLI worker hits a rate limit mid-task:
+
+1. The worker exits with a non-zero code
+2. Mark as rate-limited (auto-detected from log content):
+```bash
+bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 1 'rate limit hit after 3 minutes'"
+```
+The `complete` action auto-detects rate limit keywords ("rate limit", "429", "too many requests", "throttl") and sets status to `rate_limited` instead of `failed`.
+
+3. **Resume** (preferred) — continues from where the worker left off, preserving all progress:
+```bash
+# Wait 5 minutes, then resume using copilot --continue in the same worktree
+bash command:"skills/project-orchestrator/scripts/monitor.sh resume my-app task-001"
+# Returns the resume command — execute it:
+bash pty:true workdir:<worktree> background:true command:"copilot --continue --allow-all"
+```
+
+4. **Retry** (fallback) — starts fresh if resume isn't possible:
+```bash
+bash command:"skills/project-orchestrator/scripts/monitor.sh retry my-app task-001"
+bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
+```
+
+**Resume vs Retry decision:**
+- **Resume** if worktree still exists and has commits → copilot picks up where it left off
+- **Retry** if worktree is gone, or the partial work is broken → clean slate
+
+You can also store the Copilot CLI session ID for precise resume:
+```bash
+bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 copilotSessionId <session-id>"
+# Then resume will use: copilot --resume <session-id> --allow-all
+```
+
 ### Worker hangs (no output for > 10 minutes)
 ```bash
 process action:kill sessionId:<id>
 bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 1 'Worker hung — no output for 10 min'"
-# Retry
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 status pending"
+# Retry (fresh start — hung workers usually can't resume cleanly)
+bash command:"skills/project-orchestrator/scripts/monitor.sh retry my-app task-001"
 bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
 ```
 
