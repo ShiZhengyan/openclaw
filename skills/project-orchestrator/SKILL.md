@@ -116,15 +116,16 @@ The dispatch script:
 For EACH dispatched task, spawn a background Copilot CLI:
 
 ```bash
-# Launch worker with PTY in background — use the promptFile from dispatch output
-bash pty:true workdir:<worktree-path> background:true command:"copilot -p @<promptFile> --model <model> --allow-all-tools"
+# Read the prompt file content, then launch worker with PTY in background
+bash pty:true workdir:<worktree-path> background:true command:"copilot -p \"$(cat <promptFile>)\" --model <model> --allow-all"
 ```
 
 **Critical parameters:**
 - `pty:true` — Copilot CLI needs a pseudo-terminal
 - `background:true` — Run in background, returns sessionId
 - `workdir:<worktree>` — Each worker works in its own worktree
-- `--allow-all-tools` — No interactive approval (required for remote/WhatsApp use)
+- `--allow-all` — No interactive approval, no path restrictions (required for remote/WhatsApp use)
+- **Read prompt from file** — dispatch.sh saves full prompt to `<promptFile>`, use `$(cat <promptFile>)` to inline it
 
 ### Step 3: Record session IDs
 
@@ -307,7 +308,7 @@ bash command:"skills/project-orchestrator/scripts/project.sh update my-app model
 | -------------------- | -------------------- | ------------------------------------- |
 | `maxWorkers`         | 10                   | Max parallel Copilot CLI instances    |
 | `model`              | `claude-sonnet-4`    | LLM model for workers                |
-| `defaultPermissions` | `--allow-all-tools`  | Copilot CLI permission flags          |
+| `defaultPermissions` | `--allow-all`        | Copilot CLI permission flags          |
 
 ---
 
@@ -350,7 +351,7 @@ This file is automatically copied into each worker's worktree so they have proje
 
 1. **Never write code yourself** — always dispatch to Copilot CLI workers.
 2. **Always use `pty:true`** when launching Copilot CLI.
-3. **Always use `--allow-all-tools`** — no interactive approval possible from WhatsApp.
+3. **Always use `--allow-all`** — no interactive approval or path restrictions possible from WhatsApp.
 4. **Always include the `openclaw system event` trigger** in worker prompts.
 5. **Read worker logs after completion** — don't just mark done blindly.
 6. **Keep the Ralph Loop running** — dispatch next task immediately after one completes.
@@ -388,8 +389,8 @@ bash command:"echo '[
 bash command:"skills/project-orchestrator/scripts/dispatch.sh todo-app"
 
 # 4. Launch Copilot CLI for each dispatched task
-bash pty:true workdir:/tmp/worktrees/todo-app/task-001 background:true command:"copilot -p @~/Projects/todo-app/.orchestrator/logs/task-001.prompt.md --model claude-sonnet-4 --allow-all-tools"
-bash pty:true workdir:/tmp/worktrees/todo-app/task-002 background:true command:"copilot -p @~/Projects/todo-app/.orchestrator/logs/task-002.prompt.md --model claude-sonnet-4 --allow-all-tools"
+bash pty:true workdir:/tmp/worktrees/todo-app/task-001 background:true command:"copilot -p \"$(cat ~/Projects/todo-app/.orchestrator/logs/task-001.prompt.md)\" --model claude-sonnet-4 --allow-all"
+bash pty:true workdir:/tmp/worktrees/todo-app/task-002 background:true command:"copilot -p \"$(cat ~/Projects/todo-app/.orchestrator/logs/task-002.prompt.md)\" --model claude-sonnet-4 --allow-all"
 ```
 
 Reply: "🚀 已启动 2 个 worker：

@@ -37,7 +37,7 @@ case "$action" in
   "config": {
     "maxWorkers": 10,
     "model": "claude-sonnet-4",
-    "defaultPermissions": "--allow-all-tools"
+    "defaultPermissions": "--allow-all"
   }
 }
 EOJSON
