@@ -36,7 +36,7 @@ case "$action" in
   "status": "active",
   "config": {
     "maxWorkers": 10,
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-4.6",
     "defaultPermissions": "--allow-all"
   }
 }

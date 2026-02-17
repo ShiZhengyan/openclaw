@@ -121,8 +121,15 @@ case "$action" in
       printf '\n### %s: %s\n%s\n' "$tid" "$(date -u +%Y-%m-%d)" "$summary" >> "$project_dir/.orchestrator/PROGRESS.md"
     fi
 
-    printf '{"taskId":"%s","status":"%s","completedAt":"%s","mergeResult":%s}\n' \
-      "$tid" "$new_status" "$now" "${merge_result:-\"skipped\"}"
+    # Auto-generate completion report
+    report_file=""
+    if [ -f "$SCRIPT_DIR/report.sh" ]; then
+      "$SCRIPT_DIR/report.sh" "$project" "$tid" > /dev/null 2>&1 || true
+      report_file="$project_dir/.orchestrator/logs/$tid.report.md"
+    fi
+
+    printf '{"taskId":"%s","status":"%s","completedAt":"%s","mergeResult":%s,"reportFile":"%s"}\n' \
+      "$tid" "$new_status" "$now" "${merge_result:-\"skipped\"}" "${report_file:-}"
     ;;
 
   log)
