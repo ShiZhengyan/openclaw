@@ -88,16 +88,31 @@ project_status() {
     # JSON output
     if command -v jq &>/dev/null; then
       local name=$(jq -r '.name // .id' "$pfile")
+      local ap_enabled=$(jq -r '.autopilot.enabled // false' "$pfile" 2>/dev/null)
     else
       local name="$id"
+      local ap_enabled="false"
     fi
-    printf '{"id":"%s","name":"%s","total":%d,"done":%d,"running":%d,"pending":%d,"failed":%d,"rateLimited":%d' \
-      "$id" "$name" "$total" "$done_c" "$running_c" "$pending_c" "$failed_c" "$ratelimit_c"
+    printf '{"id":"%s","name":"%s","total":%d,"done":%d,"running":%d,"pending":%d,"failed":%d,"rateLimited":%d,"autopilotEnabled":%s' \
+      "$id" "$name" "$total" "$done_c" "$running_c" "$pending_c" "$failed_c" "$ratelimit_c" "$ap_enabled"
     if [ "$total" -gt 0 ]; then
       local pct=$((done_c * 100 / total))
       printf ',"progress":%d' "$pct"
     fi
-    printf '}'
+    # Include task details for dashboard
+    printf ',"tasks":['
+    local tfirst=true
+    for f in "$tdir"/task-*.json; do
+      [ -f "$f" ] || continue
+      $tfirst || printf ','
+      tfirst=false
+      if command -v jq &>/dev/null; then
+        jq -c '{id,title,status,priority,startedAt,completedAt}' "$f"
+      else
+        cat "$f"
+      fi
+    done
+    printf ']}'
   fi
 }
 

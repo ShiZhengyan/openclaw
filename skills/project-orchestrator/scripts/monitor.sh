@@ -166,7 +166,7 @@ case "$action" in
     tfile="$task_dir/$tid.json"
     [ -f "$tfile" ] || json_error "task '$tid' not found"
     if command -v jq &>/dev/null; then
-      jq '.status = "pending" | .completedAt = null | .result = null | .sessionId = null | .copilotSessionId = null' \
+      jq '.status = "pending" | .completedAt = null | .result = null | .sessionId = null | .copilotSessionId = null | .runId = null' \
         "$tfile" > "$tfile.tmp" && mv "$tfile.tmp" "$tfile"
     else
       sed -i.bak 's/"status": *"[^"]*"/"status": "pending"/' "$tfile"
