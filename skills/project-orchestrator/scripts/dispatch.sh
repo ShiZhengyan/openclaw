@@ -34,10 +34,10 @@ fi
 # Read model from config
 if command -v jq &>/dev/null; then
   model=$(jq -r '.config.model // "claude-sonnet-4"' "$project_dir/.orchestrator/project.json")
-  permissions=$(jq -r '.config.defaultPermissions // "--allow-all-tools"' "$project_dir/.orchestrator/project.json")
+  permissions=$(jq -r '.config.defaultPermissions // "--allow-all"' "$project_dir/.orchestrator/project.json")
 else
   model="claude-sonnet-4"
-  permissions="--allow-all-tools"
+  permissions="--allow-all"
 fi
 
 # Count currently running tasks
@@ -87,6 +87,11 @@ agents_context=""
 
 dispatched='[]'
 count=0
+
+if [ ${#pending_tasks[@]} -eq 0 ]; then
+  printf '{"dispatched":0,"maxWorkers":%d,"running":%d,"message":"no pending tasks ready"}\n' "$max_workers" "$running"
+  exit 0
+fi
 
 for entry in "${pending_tasks[@]}"; do
   task_file=$(echo "$entry" | cut -d' ' -f2-)
@@ -153,15 +158,13 @@ $([ -n "$progress_context" ] && echo "$progress_context" || echo "No learnings y
   # Log file for output
   log_file="$project_dir/.orchestrator/logs/$task_id.log"
 
-  # Output the dispatch command for the OpenClaw agent to execute
-  # The agent should run this via bash-tools with background:true and pty:true
-  copilot_cmd="copilot -p \"$(echo "$full_prompt" | head -5 | tr '\n' ' ')\" --model $model $permissions"
-
+  # Output the dispatch info for the OpenClaw agent to execute.
+  # The agent should: read promptFile, then run copilot -p "<content>" in the worktree.
+  # Use --allow-all (not just --allow-all-tools) so copilot can access all paths.
   count=$((count + 1))
-  printf '{"taskId":"%s","title":"%s","worktree":"%s","promptFile":"%s","logFile":"%s","copilotCmd":"%s","attempt":%d}\n' \
+  printf '{"taskId":"%s","title":"%s","worktree":"%s","promptFile":"%s","logFile":"%s","model":"%s","attempt":%d}\n' \
     "$task_id" "$title" "$wt_path" "$prompt_file" "$log_file" \
-    "copilot -p @$prompt_file --model $model $permissions" \
-    "$((attempts + 1))"
+    "$model" "$((attempts + 1))"
 done
 
 printf '{"dispatched":%d,"maxWorkers":%d,"running":%d}\n' "$count" "$max_workers" "$((running + count))"
