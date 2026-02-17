@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>🦞 Orchestrator</title>
+<style>
+:root {
+  --bg: #0d1117; --card: #161b22; --border: #30363d;
+  --text: #e6edf3; --muted: #8b949e; --accent: #f97316;
+  --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f8fa; --card: #ffffff; --border: #d0d7de;
+    --text: #1f2328; --muted: #656d76; --accent: #ea580c;
+    --green: #1a7f37; --red: #cf222e; --yellow: #9a6700; --blue: #0969da;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  padding: 16px; max-width: 600px; margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 20px; }
+header .status { font-size: 12px; color: var(--muted); }
+.refresh-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.project { background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.project-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.project-name { font-size: 16px; font-weight: 600; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.badge-autopilot { background: rgba(59,130,246,0.15); color: var(--blue); }
+.progress-bar { height: 8px; background: var(--border); border-radius: 4px;
+  overflow: hidden; margin-bottom: 8px; }
+.progress-fill { height: 100%; background: var(--green); border-radius: 4px;
+  transition: width 0.5s ease; }
+.stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px; }
+.stat { display: flex; align-items: center; gap: 4px; }
+.task-list { margin-top: 12px; }
+.task-section { margin-bottom: 8px; }
+.task-section-title { font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.task { display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  font-size: 13px; border-bottom: 1px solid var(--border); }
+.task:last-child { border-bottom: none; }
+.task-id { font-family: monospace; font-size: 11px; color: var(--muted); min-width: 60px; }
+.task-title { flex: 1; }
+.task-status { font-size: 11px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.s-running { background: rgba(59,130,246,0.15); color: var(--blue); }
+.s-done { background: rgba(63,185,80,0.15); color: var(--green); }
+.s-failed { background: rgba(248,81,73,0.15); color: var(--red); }
+.s-pending { background: rgba(139,148,158,0.15); color: var(--muted); }
+.s-rate_limited { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+.error { color: var(--red); text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦞 Orchestrator</h1>
+  <div class="status"><span class="refresh-dot"></span><span id="time">Loading...</span></div>
+</header>
+<div id="app"><div class="empty">Loading projects...</div></div>
+
+<script>
+const REFRESH_MS = 10000;
+const app = document.getElementById('app');
+const timeEl = document.getElementById('time');
+
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+function statusClass(s) { return 's-' + (s || 'pending'); }
+function statusEmoji(s) {
+  return { done:'✅', running:'🔄', pending:'⏳', failed:'❌', rate_limited:'⏸️' }[s] || '❓';
+}
+
+function renderProject(p) {
+  const pct = p.total > 0 ? Math.round(p.done * 100 / p.total) : 0;
+  const tasks = (p.tasks || []);
+
+  const running = tasks.filter(t => t.status === 'running');
+  const failed = tasks.filter(t => t.status === 'failed');
+  const rateLimited = tasks.filter(t => t.status === 'rate_limited');
+  const done = tasks.filter(t => t.status === 'done').slice(-3);
+  const pending = tasks.filter(t => t.status === 'pending');
+
+  let sections = '';
+  const renderTasks = (title, list) => {
+    if (!list.length) return '';
+    return '<div class="task-section"><div class="task-section-title">' + title + '</div>' +
+      list.map(t => '<div class="task"><span class="task-id">' + t.id + '</span>' +
+        '<span class="task-title">' + esc(t.title || '') + '</span>' +
+        '<span class="task-status ' + statusClass(t.status) + '">' + statusEmoji(t.status) + ' ' + t.status + '</span></div>'
+      ).join('') + '</div>';
+  };
+
+  sections += renderTasks('Running', running);
+  sections += renderTasks('Failed', failed);
+  sections += renderTasks('Rate Limited', rateLimited);
+  sections += renderTasks('Recently Completed', done);
+  if (pending.length > 0) {
+    sections += '<div class="task-section"><div class="task-section-title">Pending (' + pending.length + ')</div>' +
+      pending.slice(0, 3).map(t => '<div class="task"><span class="task-id">' + t.id + '</span>' +
+        '<span class="task-title">' + esc(t.title || '') + '</span>' +
+        '<span class="task-status s-pending">⏳</span></div>'
+      ).join('') +
+      (pending.length > 3 ? '<div class="task" style="color:var(--muted)">... and ' + (pending.length - 3) + ' more</div>' : '') +
+      '</div>';
+  }
+
+  return '<div class="project">' +
+    '<div class="project-header">' +
+      '<span class="project-name">📦 ' + esc(p.name || p.id) + '</span>' +
+      (p.autopilotEnabled ? '<span class="badge badge-autopilot">🤖 Autopilot</span>' : '') +
+    '</div>' +
+    '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
+    '<div class="stats">' +
+      '<span class="stat">' + pct + '% complete</span>' +
+      '<span class="stat">(' + p.done + '/' + p.total + ' tasks)</span>' +
+    '</div>' +
+    (sections ? '<div class="task-list">' + sections + '</div>' : '') +
+    '</div>';
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function refresh() {
+  const data = await fetchStatus();
+  timeEl.textContent = new Date().toLocaleTimeString();
+
+  if (data.error) {
+    app.innerHTML = '<div class="error">⚠️ ' + esc(data.error) + '</div>';
+    return;
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    app.innerHTML = '<div class="empty">No projects found.<br><br>Create one via WhatsApp:<br>"新建项目 my-app"</div>';
+    return;
+  }
+
+  app.innerHTML = data.map(renderProject).join('');
+}
+
+// Initial load + periodic refresh
+refresh();
+setInterval(refresh, REFRESH_MS);
+
+// Notify on task completion (if permitted)
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+let prevDone = {};
+async function checkNotify() {
+  const data = await fetchStatus();
+  if (!Array.isArray(data)) return;
+  data.forEach(p => {
+    const key = p.id;
+    if (prevDone[key] !== undefined && p.done > prevDone[key] && Notification.permission === 'granted') {
+      new Notification('🦞 Task Complete', { body: p.name + ': ' + p.done + '/' + p.total + ' done' });
+    }
+    prevDone[key] = p.done;
+  });
+}
+setInterval(checkNotify, REFRESH_MS);
+</script>
+</body>
+</html>

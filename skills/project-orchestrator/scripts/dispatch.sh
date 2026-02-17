@@ -163,12 +163,52 @@ $([ -n "$progress_context" ] && echo "$progress_context" || echo "No learnings y
   # Log file for output
   log_file="$project_dir/.orchestrator/logs/$task_id.log"
 
+  # Build the subagent worker prompt (for sessions-spawn)
+  worker_prompt="You are a coding worker subagent. Execute the task below precisely.
+
+## Project Info
+- Project: $project
+- Task ID: $task_id
+- Title: $title
+- Working directory: $wt_path
+- Scripts directory: $SCRIPT_DIR
+
+## Task
+$prompt
+
+## Project Context
+$([ -n "$agents_context" ] && echo "$agents_context" || echo "No AGENTS.md yet.")
+
+## Previous Learnings
+$([ -n "$progress_context" ] && echo "$progress_context" || echo "No learnings yet.")
+
+## Execution Steps
+1. Launch Copilot CLI to do the coding work:
+   bash pty:true workdir:$wt_path background:true command:\"copilot -p \\\"\$(cat $prompt_file)\\\" --model $effective_model --allow-all\"
+2. Monitor with: process action:poll sessionId:<id>
+3. When copilot finishes, check the exit code.
+4. If successful, commit changes:
+   bash workdir:$wt_path command:\"git add -A && git commit -m 'task($task_id): $title' || true\"
+5. Mark task complete:
+   bash command:\"$SCRIPT_DIR/monitor.sh complete $project $task_id 0 'Completed successfully'\"
+6. If failed, mark as failed:
+   bash command:\"$SCRIPT_DIR/monitor.sh complete $project $task_id 1 'Failed: <reason>'\"
+7. Report a brief summary of what was accomplished or what went wrong.
+
+## Rules
+- Work ONLY in $wt_path (the worktree directory).
+- Commit with messages prefixed with 'task($task_id): '.
+- If stuck after 3 attempts at fixing errors, commit what you have and mark as failed.
+- At the very end, run: openclaw system event --text \"Done: $task_id - $title\" --mode now"
+
+  # Save worker prompt to file
+  worker_prompt_file="$project_dir/.orchestrator/logs/$task_id.worker-prompt.md"
+  echo "$worker_prompt" > "$worker_prompt_file"
+
   # Output the dispatch info for the OpenClaw agent to execute.
-  # The agent should: read promptFile, then run copilot -p "<content>" in the worktree.
-  # Use --allow-all (not just --allow-all-tools) so copilot can access all paths.
   count=$((count + 1))
-  printf '{"taskId":"%s","title":"%s","worktree":"%s","promptFile":"%s","logFile":"%s","model":"%s","attempt":%d}\n' \
-    "$task_id" "$title" "$wt_path" "$prompt_file" "$log_file" \
+  printf '{"taskId":"%s","title":"%s","worktree":"%s","promptFile":"%s","workerPromptFile":"%s","logFile":"%s","model":"%s","attempt":%d}\n' \
+    "$task_id" "$title" "$wt_path" "$prompt_file" "$worker_prompt_file" "$log_file" \
     "$effective_model" "$((attempts + 1))"
 done
 
