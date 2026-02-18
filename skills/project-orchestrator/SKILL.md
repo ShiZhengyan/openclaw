@@ -1,6 +1,11 @@
 ---
 name: project-orchestrator
-description: Manage coding projects with parallel Copilot CLI workers. Create projects, dispatch tasks, monitor progress via WhatsApp.
+description: >-
+  项目编排器 (Jarvis/Friday)：创建和管理 coding project，并行调度多个 Copilot CLI worker 写代码。
+  当用户想要创建软件项目、规划开发任务、让 AI agent 并行写代码、查看开发进度、
+  管理编码工作流时使用此 skill。也可通过 wake word "Jarvis"/"Friday"/"贾维斯" 唤起。
+  典型意图：新建项目、创建项目、帮我开发、规划任务、plan tasks、开始干活、
+  项目进展、status、启动巡航、start autopilot、dispatch、看板、dashboard。
 metadata:
   {
     "openclaw":
@@ -24,27 +29,45 @@ You are a **project manager** that orchestrates multiple Copilot CLI workers to 
 
 ---
 
+## Wake Words (Voice Activation)
+
+The user may invoke this skill by saying **"Jarvis"**, **"Friday"**, or **"贾维斯"** anywhere in their message.
+These are voice-friendly wake words — when you see any of them (even from a Whisper transcript), this skill applies.
+
+Examples:
+- "Jarvis, create a new project for my todo app"
+- "Friday, what's the progress?"
+- "贾维斯，帮我规划任务"
+- "Jarvis, start autopilot"
+
+**Important**: Wake words may also appear with other meanings (e.g., "Friday" as a day of the week).
+Use **context** to decide: if the rest of the message is about coding, projects, tasks, or development — this skill applies.
+If the user is clearly talking about something else (e.g., "book a table for Friday"), do NOT invoke this skill.
+
+---
+
+## Voice Transcript Handling
+
+When the user's input comes from a voice transcription (`[Audio] Transcript:` or raw Whisper output):
+
+1. **Expect colloquial language** — fillers like "嗯", "那个", "就是", "OK" are normal; ignore them
+2. **Technical terms may be inaccurate** — Whisper may misspell project names, tool names, or code terms; infer the intended meaning from context
+3. **Focus on INTENT, not exact words** — "帮我搞个那个 todo 的东西" means "create a todo app project"
+4. **Mixed languages are common** — Chinese-English code-switching (e.g., "帮我 create 一个 project") is expected
+
+---
+
 ## Quick Reference
 
 | User says                              | You do                                                              |
 | -------------------------------------- | ------------------------------------------------------------------- |
 | "新建项目 X" / "create project X"      | Run `project.sh create`                                             |
 | "添加任务" / "add task"                | Run `task.sh add`                                                   |
-| "帮我规划任务" / "plan tasks"          | Batch-add tasks, then **list all for review before dispatch**       |
-| "给我看任务" / "show tasks"            | Run `task.sh list` to show all tasks                                |
-| "修改 task-002" / "edit task"          | Run `task.sh update` to change prompt/priority/deps                 |
 | "开始" / "start" / "run"              | Run `dispatch.sh` to launch workers                                 |
 | "进展" / "status"                      | Run `status.sh` for overview                                        |
 | "停止" / "stop task-001"               | Kill the worker, mark task failed                                   |
-| "重试" / "retry task-001"              | Run `monitor.sh retry`, then re-dispatch                            |
-| "恢复" / "resume task-001"             | Run `monitor.sh resume` (continue from where it stopped)            |
+| "重试" / "retry task-001"              | Reset task to pending, re-dispatch                                  |
 | "日志" / "log task-001"                | Run `monitor.sh log` to show output                                 |
-| "配置" / "config"                      | Run `project.sh update` or `project.sh get` to show/change config   |
-| "启动巡航" / "start autopilot"         | Create cron job for auto-dispatch loop                              |
-| "暂停巡航" / "pause autopilot"         | Pause the cron job (`cron.update enabled:false`)                    |
-| "恢复巡航" / "resume autopilot"        | Resume paused cron job                                              |
-| "停止巡航" / "stop autopilot"          | Remove the cron job entirely                                        |
-| "看板" / "dashboard"                   | Tell user how to open terminal or web dashboard                     |
 
 ---
 
@@ -57,13 +80,9 @@ scripts/
 ├── project.sh    # Project CRUD (create|list|get|delete|update)
 ├── task.sh       # Task CRUD (add|list|get|update|delete|next|batch-add)
 ├── worktree.sh   # Git worktree lifecycle (setup|teardown|status|cleanup|list)
-├── dispatch.sh   # Ralph Loop engine (dispatch pending tasks, generate worker prompts)
-├── monitor.sh    # Worker monitoring (check|complete|log|running|retry|resume)
-├── report.sh     # Task completion report (auto-generated on complete)
-├── status.sh     # Status reports (project-id|all, json|text)
-├── autopilot.sh  # Cron autopilot (start|stop|status)
-├── dashboard.sh  # Terminal dashboard (live-updating)
-└── dashboard-web.sh  # Web dashboard server (mobile-friendly)
+├── dispatch.sh   # Ralph Loop engine (dispatch pending tasks)
+├── monitor.sh    # Worker monitoring (check|complete|log|running)
+└── status.sh     # Status reports (project-id|all, json|text)
 ```
 
 **Important**: Set `PROJECTS_DIR` environment variable if not using `~/Projects/`.
@@ -108,49 +127,6 @@ bash command:"echo '[
 
 ---
 
-## Workflow: Reviewing Tasks Before Execution
-
-**Important**: When the user says "帮我规划任务" (plan tasks), add the tasks but **do NOT dispatch immediately**. Instead, present a summary for review.
-
-After batch-adding tasks, show a formatted summary:
-
-```bash
-# List all tasks for review
-bash command:"skills/project-orchestrator/scripts/task.sh list my-app"
-```
-
-Present to user like:
-```
-📝 *任务规划 (my-app)* — 5 个任务
-
-1️⃣ task-001: Initialize React+Vite frontend (P1)
-2️⃣ task-002: Set up Express backend (P1)
-3️⃣ task-003: Build Todo CRUD API (P2, depends on task-002)
-4️⃣ task-004: Build Todo UI components (P2, depends on task-001, task-003)
-5️⃣ task-005: Add drag-and-drop (P3, depends on task-004)
-
-满意的话说"开始"，需要修改的话告诉我哪个任务要改。
-```
-
-If the user wants changes:
-```bash
-# Modify a task's prompt
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 prompt 'New detailed prompt...'"
-
-# Change priority
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 priority 1"
-
-# Delete a task
-bash command:"skills/project-orchestrator/scripts/task.sh delete my-app task-003"
-
-# Add a new task
-bash command:"skills/project-orchestrator/scripts/task.sh add my-app 'New task title' 'New task prompt' 2"
-```
-
-Only dispatch when the user explicitly says "开始" / "start" / "run" / "go".
-
----
-
 ## Workflow: Dispatching Workers (Ralph Loop)
 
 This is the core loop. When the user says "start" or "run":
@@ -166,72 +142,55 @@ The dispatch script:
 - Finds all pending tasks (sorted by priority, respecting dependencies)
 - Creates a git worktree for each task
 - Updates task status to "running"
-- Generates a **worker prompt** for each task (saved to `<task-id>.worker-prompt.md`)
-- Returns dispatch info including `workerPromptFile` path
+- Returns the copilot command to run for each task
 
-### Step 2: Launch workers as subagents
+### Step 2: Launch Copilot CLI workers
 
-For EACH dispatched task, spawn a **subagent worker** using `sessions-spawn`:
-
-```
-sessions-spawn {
-  task: "<content of workerPromptFile>",
-  label: "worker-<taskId>",
-  model: "<model from dispatch output>",
-  cleanup: "delete",
-  runTimeoutSeconds: 0
-}
-```
-
-**Why subagents instead of bash background?**
-- **Crash-safe**: subagent state persists to disk, survives gateway restarts
-- **Auto-notify**: when a subagent finishes, the announce flow automatically delivers results back to you
-- **No polling needed**: you don't need to `process action:poll` — you get notified
-- **Model override**: each subagent can use a different model
-
-### Step 3: Record subagent run IDs
-
-After spawning, record the `runId` in the task:
-
-```bash
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 runId <runId>"
-```
-
-### Step 4: Wait for announce flow
-
-**You do NOT need to poll.** When a subagent worker finishes:
-1. The announce flow automatically delivers a summary to your session
-2. You receive the worker's final report
-3. Read the result and decide: success → mark complete, failure → retry
-
-### Step 5: Handle completion
-
-When you receive a subagent announce (or system event from worker):
-
-```bash
-# Read the worker's result from the announce message
-# Mark task complete
-bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 0 'Set up React project with Vite, TypeScript, ESLint'"
-
-# Ralph Loop: immediately dispatch next pending task
-bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
-# Then spawn subagent for each new dispatched task (repeat Step 2)
-```
-
-### Fallback: Manual dispatch with bash background
-
-If `sessions-spawn` is not available or fails, fall back to the bash background approach:
+For EACH dispatched task, spawn a background Copilot CLI:
 
 ```bash
 # Read the prompt file content, then launch worker with PTY in background
 bash pty:true workdir:<worktree-path> background:true command:"copilot -p \"$(cat <promptFile>)\" --model <model> --allow-all"
+```
 
-# Record session ID
+**Critical parameters:**
+- `pty:true` — Copilot CLI needs a pseudo-terminal
+- `background:true` — Run in background, returns sessionId
+- `workdir:<worktree>` — Each worker works in its own worktree
+- `--allow-all` — No interactive approval, no path restrictions (required for remote/WhatsApp use)
+- **Read prompt from file** — dispatch.sh saves full prompt to `<promptFile>`, use `$(cat <promptFile>)` to inline it
+
+### Step 3: Record session IDs
+
+After launching, update each task with its sessionId:
+
+```bash
 bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 sessionId <sessionId>"
+```
 
-# Poll manually
+### Step 4: Monitor and loop
+
+Periodically check worker status:
+
+```bash
+# Check all running workers
+bash command:"skills/project-orchestrator/scripts/monitor.sh check my-app"
+
+# Poll a specific worker's output
 process action:poll sessionId:<id>
+
+# Read full log
 process action:log sessionId:<id>
+```
+
+When a worker completes:
+
+```bash
+# Mark task complete (exit code 0 = done, non-zero = failed)
+bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 0 'Set up React project with Vite, TypeScript, ESLint'"
+
+# Immediately dispatch next pending task (Ralph Loop continues)
+bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
 ```
 
 ---
@@ -318,65 +277,25 @@ Example output:
 Each Copilot CLI worker's prompt includes an `openclaw system event` trigger. When a worker finishes, you'll receive a system event. Upon receiving it:
 
 1. Read the worker's output log
-2. Mark the task as complete/failed via `monitor.sh complete`
-3. **Generate and send the full report** to the user
+2. Mark the task as complete/failed
+3. **Immediately notify the user** with a brief summary
 4. Dispatch the next pending task (Ralph Loop)
 
-### Task Completion Report
+Format for WhatsApp notification:
+```
+✅ task-001 完成: Set up React project
+  📝 3 commits, merged to main
+  ⏱️ 4 min
 
-**Every task generates a full report on completion.** The report is auto-generated by `monitor.sh complete` (which calls `report.sh` internally) and saved to `.orchestrator/logs/<task-id>.report.md`.
-
-To generate/view a report manually:
-```bash
-bash command:"skills/project-orchestrator/scripts/report.sh my-app task-001"
+⏳ Dispatching task-002: Add API routes...
 ```
 
-The report includes:
-- **Status & metadata**: task title, status, attempt count, duration
-- **Task description**: the original prompt
-- **Result summary**: what was accomplished
-- **Git commits**: list of all commits made by the worker
-- **Files changed**: diff stat showing what was modified
-- **Worker log tail**: last 30 lines of Copilot CLI output
-
-**After marking a task complete, always send the report to the user:**
-
-```bash
-# 1. Mark complete (auto-generates report)
-bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 0 'Built React frontend with routing and Tailwind'"
-
-# 2. Read the report and send to user
-bash command:"cat ~/Projects/my-app/.orchestrator/logs/task-001.report.md"
-# Then format and send the key sections to the user via WhatsApp
+Or for failures:
 ```
-
-**WhatsApp report format** (summarize the full report for chat):
+❌ task-003 失败: Add auth module (attempt 2/3)
+  💥 Error: Missing NEXTAUTH_SECRET env var
+  🔄 Retrying with updated prompt...
 ```
-📊 *Task Report: task-001*
-
-✅ *Initialize React+Vite frontend*
-⏱️ Duration: 4m 32s | Attempt: 1
-📝 5 commits, merged to main
-
-*What was done:*
-- Set up React 18 + TypeScript + Vite
-- Configured Tailwind CSS
-- Created basic routing with 3 routes
-
-*Files changed:*
-  12 files changed, 847 insertions(+)
-
-*Commits:*
-- task(task-001): initialize vite project
-- task(task-001): add tailwind config
-- task(task-001): create layout components
-- task(task-001): set up react router
-- task(task-001): add basic styling
-
-⏳ Dispatching task-002: Set up Express backend...
-```
-
-For failed tasks, include the error details from the log tail.
 
 ---
 
@@ -416,46 +335,13 @@ bash command:"skills/project-orchestrator/scripts/project.sh update my-app maxWo
 
 # Change default model for workers
 bash command:"skills/project-orchestrator/scripts/project.sh update my-app model claude-opus-4.6"
-
-# Change permissions
-bash command:"skills/project-orchestrator/scripts/project.sh update my-app defaultPermissions '--allow-all-tools'"
 ```
 
 | Config Key           | Default              | Description                           |
 | -------------------- | -------------------- | ------------------------------------- |
 | `maxWorkers`         | 10                   | Max parallel Copilot CLI instances    |
-| `model`              | `claude-opus-4.6`    | LLM model for workers                |
+| `model`              | `claude-sonnet-4`    | LLM model for workers                |
 | `defaultPermissions` | `--allow-all`        | Copilot CLI permission flags          |
-
-### Model Selection Guide
-
-The `model` config controls which LLM each Copilot CLI worker uses. Choose based on task complexity:
-
-| Model                  | Best For                                    | Speed   | Cost      |
-| ---------------------- | ------------------------------------------- | ------- | --------- |
-| `claude-haiku-4.5`     | Simple/fast tasks (create files, small edits)| ⚡ Fast | 💰 Cheap  |
-| `claude-sonnet-4`      | General coding, simpler tasks                | 🔄 Med  | 💰💰 Med  |
-| `claude-opus-4.6`      | **Default.** Complex architecture, debugging  | 🐢 Slow | 💰💰💰    |
-| `gpt-5.1-codex`        | Alternative for variety                      | 🔄 Med  | 💰💰 Med  |
-
-**Per-task model override**: You can set a different model for individual tasks:
-```bash
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-003 model claude-opus-4.6"
-```
-The dispatch script will use the task-level model if set, otherwise falls back to project config.
-
-### Max Workers Design
-
-`maxWorkers` controls how many Copilot CLI instances run simultaneously. Considerations:
-
-- **Rate limits**: Copilot CLI has per-account rate limits. Running 10 workers simultaneously may trigger 429s faster.
-- **Machine resources**: Each Copilot CLI worker uses ~100-200MB RAM + a PTY. 10 workers ≈ 1-2GB.
-- **Git conflicts**: More parallel workers on the same codebase = higher chance of merge conflicts at teardown.
-
-**Recommendations:**
-- Start with `3-5` for new projects (get PROGRESS.md established first)
-- Scale to `10` once the project has good AGENTS.md and learnings
-- Use `1` for sequential tasks that must not conflict
 
 ---
 
@@ -535,173 +421,26 @@ bash command:"echo '[
 # 3. Dispatch workers
 bash command:"skills/project-orchestrator/scripts/dispatch.sh todo-app"
 
-# 4. Spawn subagent workers for each dispatched task
-# Read worker prompt, then spawn subagent:
-bash command:"cat ~/Projects/todo-app/.orchestrator/logs/task-001.worker-prompt.md"
-# sessions-spawn { task: "<content>", label: "worker-task-001", model: "claude-opus-4.6", cleanup: "delete", runTimeoutSeconds: 0 }
-bash command:"skills/project-orchestrator/scripts/task.sh update todo-app task-001 runId <runId>"
-
-bash command:"cat ~/Projects/todo-app/.orchestrator/logs/task-002.worker-prompt.md"
-# sessions-spawn { task: "<content>", label: "worker-task-002", model: "claude-opus-4.6", cleanup: "delete", runTimeoutSeconds: 0 }
-bash command:"skills/project-orchestrator/scripts/task.sh update todo-app task-002 runId <runId>"
+# 4. Launch Copilot CLI for each dispatched task
+bash pty:true workdir:/tmp/worktrees/todo-app/task-001 background:true command:"copilot -p \"$(cat ~/Projects/todo-app/.orchestrator/logs/task-001.prompt.md)\" --model claude-sonnet-4 --allow-all"
+bash pty:true workdir:/tmp/worktrees/todo-app/task-002 background:true command:"copilot -p \"$(cat ~/Projects/todo-app/.orchestrator/logs/task-002.prompt.md)\" --model claude-sonnet-4 --allow-all"
 ```
 
-Reply: "🚀 已启动 2 个 worker (subagent)：
+Reply: "🚀 已启动 2 个 worker：
 • task-001: Initialize React+Vite frontend
 • task-002: Set up Express backend
-⏳ 3 个任务等待依赖完成后自动启动。
-要我启动自动巡航吗？"
-
----
-
-## Workflow: Autopilot (Cron Auto-Dispatch)
-
-The autopilot uses OpenClaw's cron system to automatically patrol the project every 5 minutes, handling completions, dispatching new tasks, retrying failures, and notifying the user — all without manual intervention.
-
-### Starting Autopilot
-
-When the user says "启动巡航" / "start autopilot":
-
-```bash
-# 1. Get cron config from autopilot script
-bash command:"skills/project-orchestrator/scripts/autopilot.sh start my-app"
-```
-
-The script outputs a cron job config. Then create the cron job:
-
-```
-cron action:add job:{
-  name: "autopilot-my-app",
-  description: "Auto-patrol for project my-app",
-  schedule: { kind: "every", everyMs: 300000 },
-  sessionTarget: "main",
-  wakeMode: "now",
-  payload: {
-    kind: "systemEvent",
-    text: "[AUTOPILOT] patrol my-app"
-  },
-  enabled: true
-}
-```
-
-Then save the cron job ID:
-```bash
-bash command:"skills/project-orchestrator/scripts/autopilot.sh save my-app <cronJobId>"
-```
-
-**Why `sessionTarget: main`?** Because subagent workers announce back to the main session. If we used `isolated`, the patrol agent's session would end before workers finish, and announces would be lost.
-
-### Handling [AUTOPILOT] Patrol Events
-
-When you receive a system event containing `[AUTOPILOT] patrol <project>`, execute the patrol sequence:
-
-1. **Check completed workers**:
-   ```
-   subagents action:list
-   ```
-   Cross-reference with running tasks. For each completed subagent:
-   ```bash
-   bash command:"skills/project-orchestrator/scripts/monitor.sh complete <project> <task-id> <exit-code> '<summary>'"
-   ```
-
-2. **Dispatch new tasks** (if slots available):
-   ```bash
-   bash command:"skills/project-orchestrator/scripts/dispatch.sh <project>"
-   ```
-   For each dispatched task, spawn a subagent (see Dispatch workflow Step 2).
-
-3. **Handle failures**: Check for failed/rate-limited tasks and retry if appropriate.
-
-4. **Notify only on changes**: Only message the user if something changed (task completed, failed, dispatched, or all done). **Do NOT send messages every 5 minutes if nothing changed.**
-
-5. **Auto-stop when done**: If all tasks are done:
-   ```bash
-   bash command:"skills/project-orchestrator/scripts/autopilot.sh stop my-app"
-   ```
-   Then: `cron action:update jobId:<cronJobId> patch:{enabled: false}`
-   Message: "✅ All tasks complete! Autopilot stopped."
-
-### Controlling Autopilot
-
-| User says | Action |
-|-----------|--------|
-| "暂停巡航" / "pause" | `cron action:update jobId:<id> patch:{enabled: false}` |
-| "恢复巡航" / "resume" | `cron action:update jobId:<id> patch:{enabled: true}` |
-| "立即巡航" / "patrol now" | `cron action:run jobId:<id> runMode:force` |
-| "停止巡航" / "stop autopilot" | `cron action:remove jobId:<id>` |
-| "巡航状态" / "autopilot status" | `bash command:"skills/project-orchestrator/scripts/autopilot.sh status my-app"` |
-
----
-
-## Workflow: Dashboard
-
-### Terminal Dashboard (for desktop)
-
-```bash
-# Live-updating terminal dashboard
-bash command:"skills/project-orchestrator/scripts/dashboard.sh"
-
-# Single project
-bash command:"skills/project-orchestrator/scripts/dashboard.sh my-app"
-
-# Custom refresh interval (seconds)
-bash command:"skills/project-orchestrator/scripts/dashboard.sh my-app 10"
-```
-
-### Web Dashboard (for mobile)
-
-```bash
-# Start web dashboard server
-bash command:"skills/project-orchestrator/scripts/dashboard-web.sh"
-```
-
-Tell the user: "Dashboard is running at http://localhost:8787 — open it in your phone's browser. Add to home screen for quick access."
+⏳ 3 个任务等待依赖完成后自动启动。"
 
 ---
 
 ## Error Recovery
 
-### Rate Limiting (429 / Too Many Requests)
-
-When a Copilot CLI worker hits a rate limit mid-task:
-
-1. The worker exits with a non-zero code
-2. Mark as rate-limited (auto-detected from log content):
-```bash
-bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 1 'rate limit hit after 3 minutes'"
-```
-The `complete` action auto-detects rate limit keywords ("rate limit", "429", "too many requests", "throttl") and sets status to `rate_limited` instead of `failed`.
-
-3. **Resume** (preferred) — continues from where the worker left off, preserving all progress:
-```bash
-# Wait 5 minutes, then resume using copilot --continue in the same worktree
-bash command:"skills/project-orchestrator/scripts/monitor.sh resume my-app task-001"
-# Returns the resume command — execute it:
-bash pty:true workdir:<worktree> background:true command:"copilot --continue --allow-all"
-```
-
-4. **Retry** (fallback) — starts fresh if resume isn't possible:
-```bash
-bash command:"skills/project-orchestrator/scripts/monitor.sh retry my-app task-001"
-bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
-```
-
-**Resume vs Retry decision:**
-- **Resume** if worktree still exists and has commits → copilot picks up where it left off
-- **Retry** if worktree is gone, or the partial work is broken → clean slate
-
-You can also store the Copilot CLI session ID for precise resume:
-```bash
-bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 copilotSessionId <session-id>"
-# Then resume will use: copilot --resume <session-id> --allow-all
-```
-
 ### Worker hangs (no output for > 10 minutes)
 ```bash
 process action:kill sessionId:<id>
 bash command:"skills/project-orchestrator/scripts/monitor.sh complete my-app task-001 1 'Worker hung — no output for 10 min'"
-# Retry (fresh start — hung workers usually can't resume cleanly)
-bash command:"skills/project-orchestrator/scripts/monitor.sh retry my-app task-001"
+# Retry
+bash command:"skills/project-orchestrator/scripts/task.sh update my-app task-001 status pending"
 bash command:"skills/project-orchestrator/scripts/dispatch.sh my-app"
 ```
 
