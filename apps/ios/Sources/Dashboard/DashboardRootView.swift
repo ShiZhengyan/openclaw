@@ -31,6 +31,8 @@ struct DashboardRootView: View {
 
     var body: some View {
         ZStack {
+            Color.black.ignoresSafeArea()
+
             TabView(selection: self.$selectedTab) {
                 DashboardTab()
                     .tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }
@@ -45,12 +47,12 @@ struct DashboardRootView: View {
                     .tag(2)
             }
             .environment(self.dashboard)
-            .preferredColorScheme(.dark)
 
             if self.appModel.cameraFlashNonce != 0 {
                 CameraFlashOverlay(nonce: self.appModel.cameraFlashNonce)
             }
         }
+        .preferredColorScheme(.dark)
         // Status pill overlay
         .overlay(alignment: .topLeading) {
             StatusPill(
@@ -186,6 +188,8 @@ struct DashboardRootView: View {
                 Text("Connect to a gateway to start chatting")
                     .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
         }
     }
 

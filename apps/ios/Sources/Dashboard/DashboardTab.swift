@@ -144,6 +144,7 @@ struct DashboardTab: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+        .padding(.top, 36) // avoid StatusPill overlap
     }
 
     // MARK: - Agent List

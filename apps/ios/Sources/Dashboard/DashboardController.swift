@@ -51,8 +51,12 @@ final class DashboardController {
     func startMonitoring(appModel: NodeAppModel) {
         stopMonitoring()
 
-        // Initial load
+        // Initial load — try gateway first, fall back to mock data quickly
         refreshTask = Task {
+            // If no gateway connection, load mock data immediately
+            if appModel.gatewayServerName == nil {
+                self.loadMockAgents()
+            }
             await loadAgents(appModel: appModel)
         }
 
@@ -330,5 +334,49 @@ final class DashboardController {
         let minutes = seconds / 60
         let secs = seconds % 60
         return secs > 0 ? "\(minutes)m\(secs)s" : "\(minutes)m"
+    }
+
+    // MARK: - Mock Data (for development without gateway)
+
+    private func loadMockAgents() {
+        agents = [
+            AgentRunInfo(
+                id: "ralph", name: "ralph", status: .running,
+                currentTask: "Refactoring auth module",
+                elapsedSeconds: 263, progress: 0.72,
+                lastToolCall: "edit src/auth.ts",
+                runId: "run-1", emoji: "🔧",
+                workspace: "~/projects/my-app"),
+            AgentRunInfo(
+                id: "builder", name: "builder", status: .running,
+                currentTask: "Fixing CI pipeline",
+                elapsedSeconds: 720, progress: 0.35,
+                lastToolCall: "bash: npm test",
+                runId: "run-2", emoji: "🏗",
+                workspace: "~/projects/api"),
+            AgentRunInfo(
+                id: "docs-writer", name: "docs-writer", status: .error,
+                currentTask: "API docs generation failed",
+                errorMessage: "TypeDoc parse error at models/user.ts:42",
+                emoji: "📝",
+                workspace: "~/projects/api"),
+            AgentRunInfo(
+                id: "reviewer", name: "reviewer", status: .planReview,
+                currentTask: "Database migration plan",
+                planContent: "## Goal\nMigrate user table from SQLite to PostgreSQL\n\n## Steps\n1. Create PostgreSQL schema\n2. Write migration script\n3. Update ORM config\n4. Add connection pool\n5. Run tests\n\n## Impact\n- Modify 5 files\n- Add 2 files",
+                emoji: "🔍",
+                workspace: "~/projects/my-app"),
+            AgentRunInfo(
+                id: "analyst", name: "analyst", status: .idle,
+                emoji: "📊",
+                workspace: "~/projects/my-app"),
+        ]
+        runStartTimes["run-1"] = Date().addingTimeInterval(-263)
+        runStartTimes["run-2"] = Date().addingTimeInterval(-720)
+        taskQueue = [
+            TaskQueueItem(id: "q1", title: "Write user registration feature", priority: .high, source: .voice, status: .queued),
+            TaskQueueItem(id: "q2", title: "Add README install instructions", priority: .medium, source: .manual, status: .queued),
+            TaskQueueItem(id: "q3", title: "Fix linter warnings", priority: .low, source: .cron, status: .queued),
+        ]
     }
 }

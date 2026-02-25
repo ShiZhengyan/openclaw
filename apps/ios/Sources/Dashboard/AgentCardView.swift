@@ -32,7 +32,7 @@ struct AgentCardView: View {
         .animation(.easeInOut(duration: 0.15), value: isPressed)
         .onTapGesture { onTap() }
         .onLongPressGesture(minimumDuration: .infinity, pressing: { isPressed = $0 }, perform: {})
-        .padding(.bottom, 12)
+        .padding(.bottom, 0)
     }
 
     // MARK: - Header

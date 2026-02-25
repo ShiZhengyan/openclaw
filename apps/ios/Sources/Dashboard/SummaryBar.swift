@@ -17,7 +17,7 @@ struct SummaryBar: View {
         }
         .background(Color.white.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .preferredColorScheme(.dark)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func statItem(count: Int, label: String, color: Color, status: AgentStatus?) -> some View {
@@ -33,7 +33,7 @@ struct SummaryBar: View {
                     .foregroundStyle(Color(hex: 0x8B8BA3))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
         }
         .buttonStyle(.plain)
     }
