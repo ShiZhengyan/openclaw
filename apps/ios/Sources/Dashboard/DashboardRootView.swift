@@ -53,22 +53,6 @@ struct DashboardRootView: View {
             }
         }
         .preferredColorScheme(.dark)
-        // Status pill overlay
-        .overlay(alignment: .topLeading) {
-            StatusPill(
-                gateway: self.gatewayStatus,
-                voiceWakeEnabled: self.voiceWakeEnabled,
-                activity: self.statusActivity,
-                onTap: {
-                    if self.gatewayStatus == .connected {
-                        self.showGatewayActions = true
-                    } else {
-                        self.selectedTab = 2
-                    }
-                })
-                .padding(.leading, 10)
-                .safeAreaPadding(.top, 10)
-        }
         // Voice wake toast
         .overlay(alignment: .topLeading) {
             if let voiceWakeToastText, !voiceWakeToastText.isEmpty {

@@ -10,6 +10,7 @@ struct TaskDispatchSheet: View {
     @State private var showAdvanced = false
     @State private var showDirectoryPicker = false
     @State private var isEditingTask = false
+    @FocusState private var isTaskFieldFocused: Bool
 
     private let cardBg = Color.white.opacity(0.08)
     private let border = Color.white.opacity(0.12)
@@ -51,10 +52,17 @@ struct TaskDispatchSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             header("📝 Task")
             VStack(alignment: .leading, spacing: 8) {
-                if isEditingTask {
+                if isEditingTask || options.message.isEmpty {
                     TextEditor(text: $options.message).font(.system(size: 15))
                         .foregroundStyle(.white).scrollContentBackground(.hidden)
                         .frame(minHeight: 60, maxHeight: 120)
+                        .focused($isTaskFieldFocused)
+                        .onAppear {
+                            if options.message.isEmpty {
+                                isEditingTask = true
+                                isTaskFieldFocused = true
+                            }
+                        }
                 } else {
                     Text(options.message).font(.system(size: 15)).foregroundStyle(.white).lineLimit(3)
                 }
@@ -258,7 +266,10 @@ struct TaskDispatchSheet: View {
                 .background(LinearGradient(colors: [blue, Color(red: 137 / 255, green: 68 / 255, blue: 1)],
                                            startPoint: .leading, endPoint: .trailing))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-        }.padding(.top, 4)
+                .opacity(options.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1.0)
+        }
+        .disabled(options.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .padding(.top, 4)
     }
 }
 

@@ -260,15 +260,44 @@ public struct OpenClawChatView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else if self.showsEmptyState {
-            ChatNoticeCard(
-                systemImage: "bubble.left.and.bubble.right.fill",
-                title: self.emptyStateTitle,
-                message: self.emptyStateMessage,
-                tint: .accentColor,
-                actionTitle: nil,
-                action: nil)
+            VStack(spacing: 16) {
+                ChatNoticeCard(
+                    systemImage: "bubble.left.and.bubble.right.fill",
+                    title: self.emptyStateTitle,
+                    message: self.emptyStateMessage,
+                    tint: .accentColor,
+                    actionTitle: nil,
+                    action: nil)
+
+                // Suggestion chips
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(self.suggestionChips) { chip in
+                        Button {
+                            self.viewModel.input = chip.message
+                            self.viewModel.send()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(chip.emoji)
+                                    .font(.system(size: 14))
+                                Text(chip.label)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .background(OpenClawChatTheme.subtleCard)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -321,6 +350,15 @@ public struct OpenClawChatView: View {
         #else
         "Type a message below to start."
         #endif
+    }
+
+    private var suggestionChips: [ChatSuggestionChip] {
+        [
+            ChatSuggestionChip(emoji: "🧪", label: "Run tests", message: "Run the test suite and fix any failures"),
+            ChatSuggestionChip(emoji: "🔍", label: "Review code", message: "Review recent changes for bugs and issues"),
+            ChatSuggestionChip(emoji: "🔧", label: "Fix lint", message: "Fix all linting errors and warnings"),
+            ChatSuggestionChip(emoji: "💡", label: "Explain this", message: "Explain what this codebase does"),
+        ]
     }
 
     private func errorPresentation(for error: String) -> (title: String, systemImage: String, tint: Color) {
@@ -524,4 +562,11 @@ private struct ChatNoticeBanner: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)))
     }
+}
+
+struct ChatSuggestionChip: Identifiable {
+    let id = UUID()
+    let emoji: String
+    let label: String
+    let message: String
 }

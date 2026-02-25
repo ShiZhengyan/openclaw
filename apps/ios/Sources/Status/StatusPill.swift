@@ -36,16 +36,62 @@ struct StatusPill: View {
         var tint: Color?
     }
 
+    enum Style {
+        case standard
+        /// Compact inline variant for embedding in headers (no background, smaller text).
+        case compact
+    }
+
     var gateway: GatewayState
     var voiceWakeEnabled: Bool
     var activity: Activity?
     var brighten: Bool = false
+    var style: Style = .standard
     var onTap: () -> Void
 
     @State private var pulse: Bool = false
 
     var body: some View {
         Button(action: self.onTap) {
+            if self.style == .compact {
+                compactContent
+            } else {
+                standardContent
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Connection Status")
+        .accessibilityValue(self.accessibilityValue)
+        .accessibilityHint("Double tap to open settings")
+        .onAppear { self.updatePulse(for: self.gateway, scenePhase: self.scenePhase, reduceMotion: self.reduceMotion) }
+        .onDisappear { self.pulse = false }
+        .onChange(of: self.gateway) { _, newValue in
+            self.updatePulse(for: newValue, scenePhase: self.scenePhase, reduceMotion: self.reduceMotion)
+        }
+        .onChange(of: self.scenePhase) { _, newValue in
+            self.updatePulse(for: self.gateway, scenePhase: newValue, reduceMotion: self.reduceMotion)
+        }
+        .onChange(of: self.reduceMotion) { _, newValue in
+            self.updatePulse(for: self.gateway, scenePhase: self.scenePhase, reduceMotion: newValue)
+        }
+        .animation(.easeInOut(duration: 0.18), value: self.activity?.title)
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(self.gateway.color)
+                .frame(width: 7, height: 7)
+                .scaleEffect(self.gateway == .connecting && !self.reduceMotion ? (self.pulse ? 1.15 : 0.85) : 1.0)
+                .opacity(self.gateway == .connecting && !self.reduceMotion ? (self.pulse ? 1.0 : 0.6) : 1.0)
+
+            Text(self.gateway.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var standardContent: some View {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Circle()
@@ -96,23 +142,6 @@ struct StatusPill: View {
                     }
                     .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
             }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Connection Status")
-        .accessibilityValue(self.accessibilityValue)
-        .accessibilityHint("Double tap to open settings")
-        .onAppear { self.updatePulse(for: self.gateway, scenePhase: self.scenePhase, reduceMotion: self.reduceMotion) }
-        .onDisappear { self.pulse = false }
-        .onChange(of: self.gateway) { _, newValue in
-            self.updatePulse(for: newValue, scenePhase: self.scenePhase, reduceMotion: self.reduceMotion)
-        }
-        .onChange(of: self.scenePhase) { _, newValue in
-            self.updatePulse(for: self.gateway, scenePhase: newValue, reduceMotion: self.reduceMotion)
-        }
-        .onChange(of: self.reduceMotion) { _, newValue in
-            self.updatePulse(for: self.gateway, scenePhase: self.scenePhase, reduceMotion: newValue)
-        }
-        .animation(.easeInOut(duration: 0.18), value: self.activity?.title)
     }
 
     private var accessibilityValue: String {

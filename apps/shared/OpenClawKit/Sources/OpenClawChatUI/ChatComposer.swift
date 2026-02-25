@@ -24,9 +24,6 @@ struct OpenClawChatComposer: View {
         VStack(alignment: .leading, spacing: 4) {
             if self.showsToolbar {
                 HStack(spacing: 6) {
-                    if self.showsSessionSwitcher {
-                        self.sessionPicker
-                    }
                     self.thinkingPicker
                     Spacer()
                     self.refreshButton
