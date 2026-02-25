@@ -43,6 +43,22 @@ export function buildInlineProviderModels(
   });
 }
 
+/**
+ * Normalize a Copilot model ID from dash-style to dot-style.
+ *
+ * pi-ai's github-copilot catalog uses dots (`claude-opus-4.6`, `claude-sonnet-4.5`)
+ * while anthropic uses dashes (`claude-opus-4-6`, `claude-sonnet-4-5`).
+ * Users switching from anthropic to github-copilot naturally keep the dash form.
+ * Convert `claude-{family}-{major}-{minor}` → `claude-{family}-{major}.{minor}`.
+ */
+function normalizeCopilotModelId(modelId: string): string | undefined {
+  const match = modelId.match(/^(claude-(?:opus|sonnet|haiku)-\d+)-(\d+.*)$/);
+  if (!match) {
+    return undefined;
+  }
+  return `${match[1]}.${match[2]}`;
+}
+
 export function resolveModel(
   provider: string,
   modelId: string,
@@ -57,7 +73,16 @@ export function resolveModel(
   const resolvedAgentDir = agentDir ?? resolveOpenClawAgentDir();
   const authStorage = discoverAuthStorage(resolvedAgentDir);
   const modelRegistry = discoverModels(authStorage, resolvedAgentDir);
-  const model = modelRegistry.find(provider, modelId) as Model<Api> | null;
+  let model = modelRegistry.find(provider, modelId) as Model<Api> | null;
+
+  // github-copilot uses dot-style IDs (claude-opus-4.6) while anthropic uses
+  // dashes (claude-opus-4-6). Retry with dot-style when dash-style lookup fails.
+  if (!model && normalizeProviderId(provider) === "github-copilot") {
+    const dotModelId = normalizeCopilotModelId(modelId);
+    if (dotModelId) {
+      model = modelRegistry.find(provider, dotModelId) as Model<Api> | null;
+    }
+  }
 
   if (!model) {
     const providers = cfg?.models?.providers ?? {};

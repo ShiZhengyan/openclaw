@@ -6,6 +6,7 @@ vi.mock("../pi-model-discovery.js", () => ({
 }));
 
 import type { OpenClawConfig } from "../../config/config.js";
+import { discoverModels } from "../pi-model-discovery.js";
 import { buildInlineProviderModels, resolveModel } from "./model.js";
 import {
   buildOpenAICodexForwardCompatExpectation,
@@ -323,5 +324,69 @@ describe("resolveModel", () => {
 
     expect(result.model).toBeUndefined();
     expect(result.error).toBe("Unknown model: google-antigravity/some-model");
+  });
+
+  it("resolves github-copilot dash-style model IDs to dot-style", () => {
+    // pi-ai's github-copilot catalog uses dots (claude-opus-4.6) while
+    // anthropic uses dashes (claude-opus-4-6). Users switching providers
+    // would naturally keep the dash form.
+    const copilotModel = {
+      id: "claude-opus-4.6",
+      name: "Claude Opus 4.6",
+      provider: "github-copilot",
+      api: "openai-responses",
+      baseUrl: "https://api.enterprise.githubcopilot.com",
+      reasoning: false,
+      input: ["text", "image"] as const,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 8192,
+    };
+    vi.mocked(discoverModels).mockReturnValue({
+      find: vi.fn((provider: string, modelId: string) => {
+        if (provider === "github-copilot" && modelId === "claude-opus-4.6") {
+          return copilotModel;
+        }
+        return null;
+      }),
+    } as unknown as ReturnType<typeof discoverModels>);
+
+    // Dash-style should resolve via normalization
+    const result = resolveModel("github-copilot", "claude-opus-4-6", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      id: "claude-opus-4.6",
+      provider: "github-copilot",
+    });
+  });
+
+  it("resolves github-copilot dash-style sonnet model IDs to dot-style", () => {
+    const copilotModel = {
+      id: "claude-sonnet-4.6",
+      name: "Claude Sonnet 4.6",
+      provider: "github-copilot",
+      api: "openai-responses",
+      baseUrl: "https://api.enterprise.githubcopilot.com",
+      reasoning: false,
+      input: ["text", "image"] as const,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 8192,
+    };
+    vi.mocked(discoverModels).mockReturnValue({
+      find: vi.fn((provider: string, modelId: string) => {
+        if (provider === "github-copilot" && modelId === "claude-sonnet-4.6") {
+          return copilotModel;
+        }
+        return null;
+      }),
+    } as unknown as ReturnType<typeof discoverModels>);
+
+    const result = resolveModel("github-copilot", "claude-sonnet-4-6", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      id: "claude-sonnet-4.6",
+      provider: "github-copilot",
+    });
   });
 });
