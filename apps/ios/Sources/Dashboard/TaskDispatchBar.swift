@@ -3,33 +3,63 @@ import SwiftUI
 struct TaskDispatchBar: View {
     @Binding var text: String
     var isRecording: Bool
+    /// Tap send → open dispatch sheet.
     var onSubmit: (String) -> Void
+    /// Long-press send → quick launch with defaults (no sheet).
+    var onQuickLaunch: (String) -> Void
     var onMicTap: () -> Void
+    var onQuickAction: (QuickAction) -> Void
+    var onQuickActionLongPress: (QuickAction) -> Void
 
     @FocusState private var isFocused: Bool
     @State private var pulseScale: CGFloat = 1.0
 
     private let barBackground = Color(red: 28 / 255, green: 28 / 255, blue: 30 / 255).opacity(0.98)
-    private let topBorder = Color.white.opacity(0.08)
     private let fieldBackground = Color.white.opacity(0.08)
     private let fieldBorder = Color.white.opacity(0.12)
     private let micBlue = Color(red: 0, green: 122 / 255, blue: 1)
     private let micGreen = Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255)
 
+    private var hasText: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            topBorder.frame(height: 1)
+            Color.white.opacity(0.08).frame(height: 1)
 
-            HStack(spacing: 12) {
+            // Quick actions row
+            QuickActionsBar(
+                onQuickAction: onQuickAction,
+                onQuickActionLongPress: onQuickActionLongPress)
+
+            // Input row
+            HStack(spacing: 10) {
                 inputField
+
+                // Send button — tap opens sheet, long-press quick launches
+                if hasText {
+                    sendButton
+                }
+
                 micButton
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
+
+            // Hint text
+            if hasText {
+                Text("Tap ↑ to configure · Hold ↑ to quick launch")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(white: 0.28))
+                    .padding(.bottom, 4)
+            }
         }
         .background(barBackground)
     }
+
+    // MARK: - Input Field
 
     private var inputField: some View {
         TextField("Dispatch a task...", text: $text)
@@ -44,6 +74,27 @@ struct TaskDispatchBar: View {
             .tint(.white)
     }
 
+    // MARK: - Send Button
+
+    private var sendButton: some View {
+        Button {
+            submitText()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Color.blue)
+                .clipShape(Circle())
+        }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in quickLaunch() }
+        )
+    }
+
+    // MARK: - Mic Button
+
     private var micButton: some View {
         let color = isRecording ? micGreen : micBlue
 
@@ -55,7 +106,9 @@ struct TaskDispatchBar: View {
                 .background(color)
                 .clipShape(Circle())
                 .scaleEffect(isRecording ? pulseScale : 1.0)
-                .shadow(color: isRecording ? micGreen.opacity(0.6) : .clear, radius: isRecording ? 10 * pulseScale : 0)
+                .shadow(
+                    color: isRecording ? micGreen.opacity(0.6) : .clear,
+                    radius: isRecording ? 10 * pulseScale : 0)
         }
         .onChange(of: isRecording) { _, recording in
             if recording {
@@ -68,10 +121,19 @@ struct TaskDispatchBar: View {
         }
     }
 
+    // MARK: - Actions
+
     private func submitText() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         onSubmit(trimmed)
+        isFocused = false
+    }
+
+    private func quickLaunch() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onQuickLaunch(trimmed)
         text = ""
         isFocused = false
     }
@@ -83,11 +145,13 @@ struct TaskDispatchBar: View {
         VStack {
             Spacer()
             TaskDispatchBar(
-                text: .constant(""),
+                text: .constant("Write a user registration feature"),
                 isRecording: false,
                 onSubmit: { _ in },
-                onMicTap: {}
-            )
+                onQuickLaunch: { _ in },
+                onMicTap: {},
+                onQuickAction: { _ in },
+                onQuickActionLongPress: { _ in })
         }
     }
     .preferredColorScheme(.dark)

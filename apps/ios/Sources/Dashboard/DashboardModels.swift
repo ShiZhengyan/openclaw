@@ -28,6 +28,7 @@ struct AgentRunInfo: Identifiable, Hashable, Sendable {
     var runId: String? // current run ID
     var sessionKey: String? // session key for this agent
     var emoji: String? // agent emoji from identity
+    var workspace: String? // agent's working directory
 
     var displayName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : name

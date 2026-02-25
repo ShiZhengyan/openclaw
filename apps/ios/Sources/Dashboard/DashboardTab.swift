@@ -9,6 +9,8 @@ struct DashboardTab: View {
     @State private var showTaskQueue: Bool = false
     @State private var selectedAgentForPlan: AgentRunInfo?
     @State private var selectedAgentForDetail: AgentRunInfo?
+    @State private var showDispatchSheet: Bool = false
+    @State private var dispatchOptions = TaskDispatchOptions(message: "")
 
     var body: some View {
         NavigationStack {
@@ -21,16 +23,11 @@ struct DashboardTab: View {
                     if status == nil && dashboard.selectedFilter == nil {
                         return
                     }
-                    if let status, status == .idle, dashboard.selectedFilter == .idle {
-                        // Tapping "queued" navigates to TaskQueueView
-                    }
                     withAnimation(.easeInOut(duration: 0.2)) {
                         dashboard.selectedFilter = dashboard.selectedFilter == status ? nil : status
                     }
                 }
-                .onTapGesture {} // consumed by SummaryBar
                 .overlay(alignment: .trailing) {
-                    // Invisible tap target over the "Queue" stat to navigate
                     Color.clear
                         .frame(width: 80, height: 60)
                         .contentShape(Rectangle())
@@ -47,16 +44,35 @@ struct DashboardTab: View {
                     text: $dispatchText,
                     isRecording: false,
                     onSubmit: { message in
+                        // Tap send → open dispatch sheet
+                        dispatchOptions = TaskDispatchOptions(message: message, source: .manual)
+                        dispatchOptions.label = String(message.prefix(40))
+                        showDispatchSheet = true
+                    },
+                    onQuickLaunch: { message in
+                        // Long-press send → dispatch immediately with defaults
                         Task {
                             await dashboard.dispatchTask(
-                                message: message, agentId: nil, appModel: appModel
-                            )
+                                options: TaskDispatchOptions(message: message),
+                                appModel: appModel)
                         }
                         dispatchText = ""
                     },
-                    onMicTap: {}
-                )
-                .padding(.horizontal)
+                    onMicTap: {},
+                    onQuickAction: { action in
+                        // Quick action tap → instant dispatch
+                        Task {
+                            await dashboard.dispatchTask(
+                                options: action.toOptions(),
+                                appModel: appModel)
+                        }
+                    },
+                    onQuickActionLongPress: { action in
+                        // Quick action long-press → open sheet pre-filled
+                        dispatchOptions = action.toOptions()
+                        dispatchOptions.label = action.label
+                        showDispatchSheet = true
+                    })
                 .padding(.bottom, 8)
             }
             .background(Color.black.ignoresSafeArea())
@@ -81,8 +97,27 @@ struct DashboardTab: View {
                             await dashboard.rejectPlan(agent.id, note: note, appModel: appModel)
                         }
                         selectedAgentForPlan = nil
-                    }
-                )
+                    })
+                .presentationDetents([.medium, .large])
+                .preferredColorScheme(.dark)
+            }
+            .sheet(isPresented: $showDispatchSheet) {
+                TaskDispatchSheet(
+                    options: $dispatchOptions,
+                    agents: dashboard.agents,
+                    recentDirectories: dashboard.recentDirectories,
+                    onLaunch: {
+                        showDispatchSheet = false
+                        Task {
+                            await dashboard.dispatchTask(
+                                options: dispatchOptions,
+                                appModel: appModel)
+                        }
+                        dispatchText = ""
+                    },
+                    onCancel: {
+                        showDispatchSheet = false
+                    })
                 .presentationDetents([.medium, .large])
                 .preferredColorScheme(.dark)
             }
@@ -124,7 +159,8 @@ struct DashboardTab: View {
                             Task { await dashboard.retryAgent(agent.id, appModel: appModel) }
                         },
                         onDispatch: {
-                            dispatchText = "@\(agent.name) "
+                            dispatchOptions = TaskDispatchOptions(message: "", agentId: agent.id)
+                            showDispatchSheet = true
                         },
                         onViewPlan: { selectedAgentForPlan = agent },
                         onApprovePlan: {
@@ -136,8 +172,7 @@ struct DashboardTab: View {
                             Task {
                                 await dashboard.rejectPlan(agent.id, note: nil, appModel: appModel)
                             }
-                        }
-                    )
+                        })
                 }
             }
             .padding(.horizontal)

@@ -15,6 +15,9 @@ final class DashboardController {
     var taskQueue: [TaskQueueItem] = []
     var selectedFilter: AgentStatus? = nil
     var isLoading: Bool = false
+    var recentDirectories: [String] = ["~/projects/my-app", "~/projects/api", "~/web"]
+    /// Last-used dispatch options per agent ID.
+    private var lastUsedOptions: [String: TaskDispatchOptions] = [:]
 
     // Event subscription
     private var eventSubscriptionTask: Task<Void, Never>?
@@ -125,25 +128,37 @@ final class DashboardController {
         }
     }
 
-    func dispatchTask(message: String, agentId: String?, appModel: NodeAppModel) async {
-        let targetAgent = agentId ?? agents.first(where: { $0.status == .idle })?.id
+    func dispatchTask(options: TaskDispatchOptions, appModel: NodeAppModel) async {
+        let targetAgent = options.agentId ?? agents.first(where: { $0.status == .idle })?.id
 
         guard let resolvedAgent = targetAgent else {
             // No idle agent available — queue the task
             let item = TaskQueueItem(
                 id: UUID().uuidString,
-                title: message,
+                title: options.message,
                 priority: .medium,
-                source: .manual,
+                source: options.source == .voice ? .voice : .manual,
                 status: .queued)
             taskQueue.append(item)
             return
         }
 
+        // Persist last-used options for this agent
+        lastUsedOptions[resolvedAgent] = options
+
+        // Update recent directories
+        if let dir = options.workingDirectory,
+           !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            recentDirectories.removeAll { $0 == dir }
+            recentDirectories.insert(dir, at: 0)
+            if recentDirectories.count > 8 { recentDirectories = Array(recentDirectories.prefix(8)) }
+        }
+
         // Mark agent as running
         if let idx = agents.firstIndex(where: { $0.id == resolvedAgent }) {
             agents[idx].status = .running
-            agents[idx].currentTask = message
+            agents[idx].currentTask = options.message
             agents[idx].progress = nil
             agents[idx].elapsedSeconds = 0
         }
@@ -153,9 +168,23 @@ final class DashboardController {
             struct AgentParams: Codable {
                 var message: String
                 var agentId: String?
+                var thinking: String?
+                var label: String?
+                var timeout: Int?
+                var extraSystemPrompt: String?
+                var idempotencyKey: String
                 var timeoutMs: Int = 300_000
             }
-            let params = AgentParams(message: message, agentId: resolvedAgent)
+            let thinkingValue = options.thinking != .low ? options.thinking.apiValue : nil
+            let params = AgentParams(
+                message: options.message,
+                agentId: resolvedAgent,
+                thinking: thinkingValue,
+                label: options.label,
+                timeout: options.timeout > 0 ? options.timeout : nil,
+                extraSystemPrompt: options.extraContext,
+                idempotencyKey: UUID().uuidString,
+                timeoutMs: options.timeout > 0 ? options.timeout * 1000 : 300_000)
             let data = try JSONEncoder().encode(params)
             let json = String(data: data, encoding: .utf8)
             _ = try await session.request(method: "agent", paramsJSON: json, timeoutSeconds: 10)
@@ -166,6 +195,13 @@ final class DashboardController {
                 agents[idx].errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Legacy convenience for simple dispatch calls.
+    func dispatchTask(message: String, agentId: String?, appModel: NodeAppModel) async {
+        await dispatchTask(
+            options: TaskDispatchOptions(message: message, agentId: agentId),
+            appModel: appModel)
     }
 
     func retryAgent(_ agentId: String, appModel: NodeAppModel) async {
